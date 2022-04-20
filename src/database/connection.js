@@ -1,7 +1,7 @@
 const {Sequelize , DataTypes} = require('sequelize')
 const config = require('../../config/config.json')
 const mysql = require('mysql2/promise');
-const { host, port, username, password, database, dialect } = config.test;
+const { host, port, username, password, database, dialect } = config.development;
 
 
 const db = new Sequelize({

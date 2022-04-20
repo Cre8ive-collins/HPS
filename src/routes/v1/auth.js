@@ -68,7 +68,7 @@ route.post('/admin/login', (req, res) => {
     if(!admin){
       res.status(400).json({
         data : req.body,
-        message : "Incorrect email and password combination"
+        message : "No user with this enail identifier"
       })
     }else{
       console.log(admin.pass)

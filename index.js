@@ -41,16 +41,16 @@ app.post('*', function(req, res){
 });
 
 
-// app.listen(port, () => {
-//   console.log(`Example app listening on port ${port} ${process.env.FE_URL}`)
-// })
+app.listen(port, () => {
+  console.log(`Example app listening on port ${port} ${process.env.FE_URL}`)
+})
  
 
-initialize().then(() => {
-  app.listen(port, () => {
-        console.log(`Example app listening on port ${port}`)
-      })
-}).catch(err => {
-    console.log(err)
-  })
+// initialize().then(() => {
+//   app.listen(port, () => {
+//         console.log(`Example app listening on port ${port}`)
+//       })
+// }).catch(err => {
+//     console.log(err)
+//   })
 

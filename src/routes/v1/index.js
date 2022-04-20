@@ -33,6 +33,23 @@ route.get('/', auth.auth, (req, res) => {
 
 route.use('/auth', require('./auth'))
 
+const admissionOfficerLogic = (req) => {
+  console.log("HEree")
+  Admission_officers.findAll({
+  }).then(results => {
+    results.sort((a, b) => {
+      return a.clients - b.clients; 
+  })
+  mailers.admissionOfficerNotification(req.body, results[0])
+  Admission_officers.update({
+    clients : results[0].clients + 1
+  }, {where : { id : results[0].id}})
+  Users.update({ admission_officer : results[0].id}, { where : { email : req.body.email}})
+}).catch(err => {
+    console.log(err)  
+  })
+}
+
 route.post('/apply',  (req, res) => {
     Users.create(
       { 
@@ -44,6 +61,7 @@ route.post('/apply',  (req, res) => {
       }).then(async (user) => {
         let link = jwt.sign({ id: user.id}, process.env.TOKEN_SECRET)
         await mailers.newApplication(req.body, link).catch(err => console.log(err))
+        admissionOfficerLogic(req)
         let data = {
           "data" : {user, link},
           message : "Application Successfull, Check your email for futher instructions "
@@ -60,7 +78,6 @@ route.post('/apply',  (req, res) => {
 route.put('/apply',  (req, res) => {
     let data = req.body.data
     let id = req.body.id
-    console.log(req.body)
     Users.update( data , 
       { where : {
         id : id
@@ -161,25 +178,90 @@ route.post('/admin/newAdmissionOfficer', (req, res) => {
   
 })
 
+route.get('/user/:id', (req, res) => {
+  console.log(req.params.id)
+  Users.findOne({ where : { id : req.params.id }, raw : false}).then(result => {
+    if(!result){
+      res.status(400).json({
+        message : "Selected id is invalid "
+      })
+    }else{
+      res.status(200).json({
+        data : {user : result},
+      })
+    }
+  }).catch(err => {
+    res.status(500).json({
+      message : "Server Error"
+    })
+  })
+})
+
 route.get('/officer', (req, res) => {
   try {
-    let decoded = jwt.verify(req.query.id, process.env.TOKEN_SECRET)
-    Admission_officers.findOne({ where : { id : decoded.id}}).then(result => {
-      res.status(200).json({
-        admission_officer : result,
-        message : "Code verified"
+    if(!req.query.id){
+      let decoded = jwt.verify(req.query.id, process.env.TOKEN_SECRET)
+      Admission_officers.findOne({ where : { id : decoded.id}}).then(result => {
+        res.status(200).json({
+          admission_officer : result,
+          message : "Code verified"
+        })
+      }).catch(err => {
+        res.status(500).json({
+          message : err.message
+        })
       })
-    }).catch(err => {
-      res.status(500).json({
-        message : err.message
-      })
-    })
+    }else{
+      console.log(req.headers)
+    }
     
   } catch (error) {
     res.status(401).json({
       message : "Unathorized access"
     })
   }
+})
+
+route.get('/officers', (req, res) => {
+  try {
+    let decoded = jwt.verify(req.headers.officer_token, process.env.TOKEN_SECRET)
+    console.log(decoded)
+    Admission_officers.findOne({ where : { id : decoded.id}}).then(result => {
+      res.status(200).json({
+        admission_officer : result
+      })
+    })
+  } catch (error) {
+    console.log(error)
+  }
+})
+
+route.post('/officer/login', (req, res) => {
+  console.log(req.body)
+  Admission_officers.findOne({ where : { email : req.body.email}}).then(result => {
+    if(!result){
+      res.status(401).json({
+        message : `No user found with the email ${req.body.email}`
+      })
+    }else{
+      bcrypt.compare(req.body.password, result.pass, ( err, response  ) => {
+        if(!response){
+          console.log(response)
+          res.status(401).json({
+            message : `Incorrect password`
+          })
+        }else{
+          const token = jwt.sign({ id: result.id}, process.env.TOKEN_SECRET)
+          res.status(200).json({
+            admission_officer : result,
+            token : token,
+            message : `Login successfull`
+          })
+        }
+      })
+    }
+
+  })
 })
 
 route.post('/officer/setpassword', (req, res) => {
@@ -200,6 +282,47 @@ route.post('/officer/setpassword', (req, res) => {
       })
     }
   })
+})
+
+route.get('/officer/clients', auth.admission_officers, (req, res) => {
+  console.log("PAssess", res.locals.id)
+  Users.findAll({ where : { admission_officer : res.locals.id }}).then( result => {
+    res.status(200).json({
+      data : result
+    })
+  }).catch(err => {
+    console.log(err)
+  })
+})
+
+route.post('/officer/send_reminder', auth.admission_officers, (req, res) => {
+  let status =  req.body.status
+  Users.findOne({ where : { id : req.body.id }}).then(async user => {
+    if(!user){
+      res.status(400).json({
+        message : "Selected id is invalid "
+      })
+    }else{
+      const link = jwt.sign({ id: user.id}, process.env.TOKEN_SECRET)
+      if(status){
+        status == 2 ? await mailers.doc_reminder(user, link) : status == 3 ? await mailers.payment_reminder() : console.log('extra')
+        res.status(200).json({
+          message : `Reminder sent to ${user.first_name} ${user.last_name}`
+        })
+      }else{
+        await mailers.send_reminder(user, link)
+        res.status(200).json({
+          message : `Reminder sent to ${user.first_name} ${user.last_name}`
+        })
+      }
+    }
+  }).catch(err => {
+    console.log(err)
+    res.status(500).json({
+      message : "Server Error"
+    })
+  })
+
 })
 
 route.get('*', function(req, res){
