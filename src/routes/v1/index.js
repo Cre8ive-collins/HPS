@@ -4,6 +4,10 @@ const auth = require('../../middlewares/auth')
 const bcrypt = require('bcrypt');
 const { Users, Admin, Admission_officers } = require('../../database/connection')
 const jwt = require('jsonwebtoken')
+const { Op } = require("sequelize");
+require('dotenv').config()
+
+
 
 
 
@@ -34,7 +38,6 @@ route.get('/', auth.auth, (req, res) => {
 route.use('/auth', require('./auth'))
 
 const admissionOfficerLogic = (req) => {
-  console.log("HEree")
   Admission_officers.findAll({
   }).then(results => {
     results.sort((a, b) => {
@@ -161,6 +164,37 @@ route.get('/admin',  (req, res) => {
   })
 })
 
+route.post('/hazard/create/admin', (req, res) => {
+  // HAZARDCODE1332211185FAUX
+  if(req.headers.harzad_code !== process.env.HAZARD_CODE){
+    res.status(402).json({
+      message : "YOU DO NOT HAVE THE RIGHT PERMISSION TO PERFORM THIS ACTION"
+  })
+  }else{
+    bcrypt.hash(req.body.password, 10, async (err, hash) => {
+      Admin.create({
+        first_name: req.body.first_name , 
+        last_name: req.body.last_name ,  
+        email : req.body.email,
+        role : 5,
+        pass : hash
+      }).then(admin => {
+        res.status(200).json({
+          admin , 
+          message : `New Admin ${req.body.first_name} Created`
+        })
+      })
+      .catch(err => { 
+        res.status(403).json({ 
+          err,
+          message : err?.errors[0]?.message
+        })
+        return 
+      })
+    })
+  }
+})
+
 route.post('/admin/newAdmissionOfficer', (req, res) => {
   console.log(req.body)
   Admission_officers.create(req.body).then( async (response) => {
@@ -284,15 +318,70 @@ route.post('/officer/setpassword', (req, res) => {
   })
 })
 
-route.get('/officer/clients', auth.admission_officers, (req, res) => {
-  console.log("PAssess", res.locals.id)
-  Users.findAll({ where : { admission_officer : res.locals.id }}).then( result => {
+route.get('/officer/clients', auth.admission_officers,async  (req, res) => {
+  console.error(req.query, "Qp")
+  let id = res.locals.id
+  let { param, search } = req.query
+  if(search){
+    let result = await Users.findAll({ where : { 
+      admission_officer : id, 
+      [Op.or] : [
+        {email : {[Op.like] : `%${search}%`}},
+        {first_name : {[Op.like] : `%${search}%`}},
+        {last_name : {[Op.like] : `%${search}%`}},
+      ]
+    }})
     res.status(200).json({
       data : result
     })
-  }).catch(err => {
-    console.log(err)
-  })
+    return
+  }
+  if (param == 'pending'){
+    let result = await Users.findAll({ where : { 
+      admission_officer : id, 
+      applications_status : null
+    }})
+    res.status(200).json({
+      data : result
+    })
+    return
+  }else if(param == 'applied'){
+    let result = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [3],}
+    }})
+    res.status(200).json({
+      data : result
+    })
+    return
+  }else if(param == 'success'){
+    let result = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [4],}
+    }})
+    res.status(200).json({
+      data : result
+    })
+    return
+  }else if(param == 'document'){
+    let result = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [2, 1],}
+    }})
+    res.status(200).json({
+      data : result
+    })
+    return
+  }else{
+    Users.findAll({ where : { admission_officer : res.locals.id 
+    }}).then( result => {
+      res.status(200).json({
+        data : result
+      })
+    }).catch(err => {
+      console.log(err)
+    })
+  }
 })
 
 route.post('/officer/send_reminder', auth.admission_officers, (req, res) => {
@@ -323,6 +412,41 @@ route.post('/officer/send_reminder', auth.admission_officers, (req, res) => {
     })
   })
 
+})
+
+route.get('/officer/dashboard',auth.admission_officers, async (req, res) => {
+  let id = res.locals.id
+  try {
+    let pending = await Users.findAll({ where : { 
+      admission_officer : id, 
+      applications_status : null
+    }})
+    let document = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [2, 1],}
+    }})
+    let applied = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [3],}
+    }})
+    let success = await Users.findAll({ where : {
+      admission_officer : id, 
+      applications_status : {[Op.or] : [4],}
+    }})
+    let data = {
+      pending : pending.length,
+      document : document.length,
+      applied : applied.length,
+      success : success.length
+    }
+    res.status(200).json({
+      data 
+    })
+  } catch (error) {
+    res.status(500).json({
+      message : "Server Error"
+    })
+  }
 })
 
 route.get('*', function(req, res){
